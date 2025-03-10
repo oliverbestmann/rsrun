@@ -1,16 +1,14 @@
-use gtk::gdk::{Key, ModifierType};
-use gtk::glib::Propagation;
-use gtk::{
-    glib, Align, Application, ApplicationWindow, Box, EventControllerKey, Label, Orientation,
-};
-use gtk::{prelude::*, Entry};
+use adw::gdk::{Key, ModifierType};
+use adw::glib;
+use adw::prelude::*;
+use gtk::{Align, ApplicationWindow, Box, Entry, EventControllerKey, Label, Orientation};
 use std::os::unix::prelude::CommandExt;
 
 const APP_ID: &str = "com.github.oliverbestmann.RsRun";
 
 fn main() -> glib::ExitCode {
     // Create a new application
-    let app = Application::builder().application_id(APP_ID).build();
+    let app = adw::Application::builder().application_id(APP_ID).build();
 
     // Connect to "activate" signal of `app`
     app.connect_activate(build_ui);
@@ -19,9 +17,9 @@ fn main() -> glib::ExitCode {
     app.run()
 }
 
-fn build_ui(app: &Application) {
+fn build_ui(app: &adw::Application) {
     // Create a button with label and margins
-    let entry = Entry::builder().placeholder_text("Press me!").build();
+    let entry = Entry::builder().placeholder_text("Command").build();
 
     let ev = EventControllerKey::new();
 
@@ -53,10 +51,10 @@ fn build_ui(app: &Application) {
 
             if ctrl && key == Key::R {
                 println!("search activated");
-                return Propagation::Stop;
+                return glib::Propagation::Stop;
             }
 
-            Propagation::Proceed
+            glib::Propagation::Proceed
         }
     });
 
