@@ -5,11 +5,10 @@ use glib::{Propagation, SourceId};
 use gtk::{Align, ApplicationWindow, Box, Entry, EventControllerKey, Label, Orientation};
 use log::{info, warn};
 use std::cell::RefCell;
-use std::collections::HashSet;
-use std::os::linux::fs::MetadataExt;
 use std::os::unix::prelude::CommandExt;
 use std::rc::Rc;
-use std::{env, fs};
+
+mod autocomplete;
 
 const APP_ID: &str = "com.github.oliverbestmann.RsRun";
 
@@ -22,9 +21,7 @@ fn main() -> glib::ExitCode {
     log::set_logger(&GLIB_LOGGER).unwrap();
     log::set_max_level(log::LevelFilter::Debug);
 
-    let binaries = list_binaries().unwrap();
-
-    let app_state = AppState::from(RefCell::new(AppStateInner::new(binaries)));
+    let app_state = AppState::from(RefCell::new(AppStateInner::new()));
 
     // Create a new application
     let app = adw::Application::builder().application_id(APP_ID).build();
@@ -32,21 +29,20 @@ fn main() -> glib::ExitCode {
     // Connect to "activate" signal of `app`
     app.connect_activate(move |app| build_ui(app, app_state.clone()));
 
+    // load list of binaries in the background
+    autocomplete::preload();
+
     // Run the application
     app.run()
 }
 
 pub struct AppStateInner {
-    binaries: Vec<String>,
     timeout_id: Option<SourceId>,
 }
 
 impl AppStateInner {
-    pub fn new(binaries: Vec<String>) -> Self {
-        Self {
-            binaries,
-            timeout_id: None,
-        }
+    pub fn new() -> Self {
+        Self { timeout_id: None }
     }
 }
 
@@ -63,7 +59,7 @@ fn make_info_label() -> Label {
 
 fn make_container_view() -> Box {
     Box::builder()
-        .spacing(6)
+        .spacing(8)
         .orientation(Orientation::Vertical)
         .halign(Align::Fill)
         .margin_start(12)
@@ -115,9 +111,9 @@ fn build_ui(app: &adw::Application, state: AppState) {
     // Create a window
     let window = ApplicationWindow::builder()
         .application(app)
-        .title("Launch")
+        .title("rsrun")
         .child(&views.container)
-        .width_request(500)
+        .default_width(500)
         .resizable(false)
         .build();
 
@@ -189,11 +185,7 @@ fn autocomplete(views: &Views, app_state: &AppState) {
 
     let mut state = app_state.borrow_mut();
 
-    let candidates: Vec<_> = state
-        .binaries
-        .iter()
-        .filter(|binary| binary.starts_with(prefix))
-        .collect();
+    let candidates = autocomplete::candidates(prefix);
 
     info!("Candidates: {:?}", candidates);
 
@@ -246,54 +238,17 @@ fn autocomplete(views: &Views, app_state: &AppState) {
 }
 
 fn execute_command(command: &str) {
-    println!("Running command: {:?}", command);
+    info!("Running command: {:?}", command);
     let err = std::process::Command::new("sh")
         .arg("-c")
         .arg(command)
         .exec();
 
-    println!("Failed to run: {:?}", err);
+    warn!("Failed to run: {:?}", err);
 }
 
 fn execute_command_in_terminal(command: &str) {
     let command = ["ptyxis", "--", "sh", "-c", command];
     let err = std::process::Command::new("ptyxis").args(command).exec();
-    println!("Failed to run: {:?}", err);
-}
-
-fn list_binaries() -> anyhow::Result<Vec<String>> {
-    let path = env::var_os("PATH").unwrap_or_default();
-
-    let mut files = HashSet::<String>::new();
-
-    for path in env::split_paths(&path) {
-        info!("Looking for binaries in {:?}", path);
-        let Ok(iter) = fs::read_dir(&path) else {
-            warn!("Failed to list binaries in {:?}", path);
-            continue;
-        };
-
-        for file in iter {
-            let file = file?;
-
-            let name = file.file_name();
-            let Some(name) = name.to_str() else { continue };
-
-            if files.contains(name) {
-                continue;
-            };
-
-            let Ok(meta) = fs::metadata(file.path()) else {
-                warn!("Failed to stat: {:?}", file.path());
-                continue;
-            };
-
-            if meta.is_file() && (meta.st_mode() & 0o400) != 0 {
-                // executable file
-                files.insert(name.to_owned());
-            }
-        }
-    }
-
-    Ok(files.into_iter().collect())
+    warn!("Failed to run: {:?}", err);
 }
